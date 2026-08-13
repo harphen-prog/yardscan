@@ -1,5 +1,4 @@
-import streamlit as st, json, os, datetime, base64
-from pathlib import Path
+import streamlit as st, json, os, datetime
 
 st.set_page_config(page_title="YardScan Pro", page_icon="🌿", layout="wide")
 
@@ -7,140 +6,162 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 * {font-family: 'Inter', sans-serif;}
-.hero {background: linear-gradient(135deg, #0f5c36 0%, #22c55e 100%); padding: 28px; border-radius: 20px; color: white; margin-bottom: 18px;}
-.card {background: white; border-radius: 16px; padding: 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #eef2ee; margin-bottom: 12px;}
-.badge {background:#dcfce7; color:#166534; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700;}
-.badge-red {background:#fee2e2; color:#991b1b; padding:4px 12px; border-radius:20px; font-size:12px;}
-.inbox-item {border-left:4px solid #22c55e; background:#f8faf8; padding:12px; border-radius:10px; margin-bottom:10px;}
+.hero {background: linear-gradient(135deg, #0f5c36 0%, #22c55e 100%); padding: 22px; border-radius: 18px; color: white; margin-bottom: 14px;}
+.card {background: white; border-radius: 14px; padding: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.05); border: 1px solid #eee; margin-bottom: 8px;}
+.price-box {background:#f0fdf4; border:2px solid #22c55e; padding:16px; border-radius:12px; text-align:center;}
 </style>
 """, unsafe_allow_html=True)
 
-ADMIN_EMAIL = "harphen-prog@gmail.com"
-STRIPE_LINK = "https://buy.stripe.com/test_00g5kL2V0"
 AFF_FILE = "affiliates.json"
 SUB_FILE = "submissions.json"
+USER_FILE = "users_db.json"
 
-if os.path.exists(AFF_FILE):
-    try:
-        with open(AFF_FILE) as f: AFF=json.load(f)
-    except: AFF={}
-else:
-    AFF={"Lavender":"https://amazon.com/s?k=lavender","Boxwood":"https://amazon.com/s?k=boxwood","Black-Eyed Susan":"https://amazon.com/s?k=black+eyed+susan","Hydrangea":"https://amazon.com/s?k=hydrangea"}
+def load_json(f, default):
+    if os.path.exists(f):
+        try:
+            with open(f) as j:
+                data=json.load(j)
+                if data: return data
+        except: pass
+    return default
 
-if os.path.exists(SUB_FILE):
-    try:
-        with open(SUB_FILE) as f: SUBS=json.load(f)
-    except: SUBS=[]
-else: SUBS=[]
+def save_json(f, data):
+    with open(f,"w") as j: json.dump(data,j,indent=2)
 
-if "users" not in st.session_state: st.session_state.users={ADMIN_EMAIL: {"pw":"admin123","plan":"paid","role":"admin"}}
+# PERSISTENT LOAD - Never overwrite if file exists!
+AFF = load_json(AFF_FILE, {"Lavender":"https://amazon.com/s?k=lavender","Boxwood":"https://amazon.com/s?k=boxwood","Black-Eyed Susan":"https://amazon.com/s?k=black+eyed+susan","Hydrangea":"https://amazon.com/s?k=hydrangea"})
+SUBS = load_json(SUB_FILE, [])
+DEFAULT_USERS = {"harphen-prog@gmail.com":{"pw":"admin123","name":"Harphen Admin","plan":"paid","role":"admin","address":"","newsletter":False,"purchases":[],"joined":"2026-01-01"}}
+USERS = load_json(USER_FILE, DEFAULT_USERS)
+# Ensure admin always exists
+USERS["harphen-prog@gmail.com"]=DEFAULT_USERS["harphen-prog@gmail.com"]
+
 if "login" not in st.session_state: st.session_state.login=None
 if "unlocked" not in st.session_state: st.session_state.unlocked=False
-def is_admin(): return st.session_state.login and st.session_state.users.get(st.session_state.login,{}).get("role")=="admin"
-def save_subs():
-    with open(SUB_FILE,"w") as f: json.dump(SUBS,f,indent=2)
+if "show_dashboard" not in st.session_state: st.session_state.show_dashboard=False
+if "selected_amount" not in st.session_state: st.session_state.selected_amount=49
 
+def is_admin(): return st.session_state.login and USERS.get(st.session_state.login,{}).get("role")=="admin"
+def save_all(): save_json(SUB_FILE, SUBS); save_json(USER_FILE, USERS)
+
+# SIDEBAR
 with st.sidebar:
     st.title("🌿 YardScan Pro")
     if st.session_state.login:
-        st.success(f"{st.session_state.login}")
-        plan=st.session_state.users[st.session_state.login]["plan"]
-        st.markdown(f"<span class='badge'>{plan.upper()} PLAN</span>", unsafe_allow_html=True)
+        u = USERS.get(st.session_state.login, {})
+        st.success(f"{u.get('name','')} \n{st.session_state.login}")
+        plan_lbl = f"{u.get('plan','free').upper()} PLAN"
+        st.caption(plan_lbl)
         if st.button("Logout", use_container_width=True):
-            st.session_state.login=None; st.session_state.unlocked=False; st.rerun()
+            st.session_state.login=None; st.session_state.unlocked=False; st.session_state.show_dashboard=False; st.rerun()
         if is_admin():
             st.divider()
-            st.subheader(f"📥 Client Inbox ({len(SUBS)})")
-            st.caption("All client jobs land here")
-            if st.button("View All Jobs", use_container_width=True): st.session_state.show_inbox=True
-            st.divider()
-            st.subheader("🔧 Affiliate Links")
-            txt=st.text_area("JSON", json.dumps(AFF,indent=2), height=150)
-            if st.button("Save Links"):
-                with open(AFF_FILE,"w") as f: f.write(txt); st.success("Saved!")
+            st.subheader(f"📊 Admin")
+            st.metric("Clients", len([k for k,v in USERS.items() if v.get("role")!="admin"]))
+            st.metric("Jobs", len(SUBS))
+            st.metric("Newsletter", sum(1 for x in USERS.values() if x.get("newsletter")))
+            if st.button("📥 Open Dashboard", type="primary", use_container_width=True):
+                st.session_state.show_dashboard=True; st.rerun()
+            if st.button("🧑‍🌾 Designer", use_container_width=True):
+                st.session_state.show_dashboard=False; st.rerun()
+            # BACKUP BUTTON - SO YOU NEVER LOSE CLIENTS
+            if st.button("💾 Export Clients CSV"):
+                import pandas as pd
+                df=pd.DataFrame([{"Name":v.get("name"),"Email":k,"Address":v.get("address"),"Plan":v.get("plan"),"Newsletter":v.get("newsletter")} for k,v in USERS.items() if v.get("role")!="admin"])
+                st.download_button("Download CSV", df.to_csv(index=False), "clients_backup.csv", "text/csv")
     else:
         t1,t2=st.tabs(["Login","Sign Up"])
         with t1:
-            e=st.text_input("Email", key="l1"); p=st.text_input("Password", type="password", key="l2")
+            e=st.text_input("Email*", key="l1"); p=st.text_input("Password*", type="password", key="l2")
             if st.button("Login", type="primary", use_container_width=True):
-                if e in st.session_state.users and st.session_state.users[e]["pw"]==p:
+                if e in USERS and USERS[e]["pw"]==p:
                     st.session_state.login=e
-                    if st.session_state.users[e]["plan"]=="paid": st.session_state.unlocked=True
+                    if USERS[e]["plan"]=="paid": st.session_state.unlocked=True
                     st.rerun()
-                else: st.error(f"Use {ADMIN_EMAIL} / admin123")
+                else: st.error("Invalid")
         with t2:
-            ne=st.text_input("New Email", key="s1"); np=st.text_input("New Pass", type="password", key="s2")
-            if st.button("Create Free Account", use_container_width=True):
-                st.session_state.users[ne]={"pw":np,"plan":"free","role":"user"}; st.success("Created! Login now.")
+            st.caption("Name + Email mandatory")
+            n=st.text_input("Full Name*", key="s_name"); ne=st.text_input("Email* (report delivery)", key="s_email"); np=st.text_input("Password*", type="password", key="s_pw")
+            news=st.checkbox("Subscribe quarterly newsletter", value=True)
+            if st.button("Create Account", use_container_width=True):
+                if not n or not ne: st.error("Name + Email mandatory!")
+                elif ne in USERS: st.error("Exists, login")
+                else:
+                    USERS[ne]={"pw":np,"name":n,"plan":"free","role":"user","address":"","newsletter":news,"purchases":[],"joined":str(datetime.datetime.now())[:10]}
+                    save_all(); st.success("Created! Login now")
 
 if not st.session_state.login:
-    st.markdown('<div class="hero"><h1 style="color:white;margin:0;">AI Garden Designer That Sells Plants For You</h1><p>Upload yard → Get removal + design + AI visual + buy links that pay YOU</p></div>', unsafe_allow_html=True)
-    st.info("Login from sidebar to start - Free accounts work like client view")
+    st.markdown('<div class="hero"><h1 style="color:white;margin:0;">AI Garden Designer</h1><p>Professional reports + Your affiliate income</p></div>', unsafe_allow_html=True)
+    st.info("Login from sidebar")
     st.stop()
 
-plan=st.session_state.users[st.session_state.login]["plan"]
-paid=(plan=="paid") or st.session_state.unlocked
-
-# ADMIN INBOX VIEW
-if is_admin() and st.session_state.get("show_inbox", False):
-    st.markdown(f'<div class="hero"><h2 style="color:white;margin:0;">📥 Admin Inbox - {len(SUBS)} Client Jobs</h2><p>Here is where you receive all client files & service requests</p></div>', unsafe_allow_html=True)
-    if st.button("← Back to Designer"): st.session_state.show_inbox=False; st.rerun()
-    if not SUBS: st.warning("No client jobs yet. Create a test client account and submit.")
-    else:
-        for idx, job in enumerate(reversed(SUBS)):
-            with st.container():
-                st.markdown(f'<div class="inbox-item"><b>#{len(SUBS)-idx} {job["client_name"]}</b> • {job["client_email"]} • Zip {job["zip"]} • <b>{job["service"]}</b> • {job["date"]} • {"PAID" if job["paid"] else "FREE"}<br>{job["notes"]}</div>', unsafe_allow_html=True)
-                if st.button(f"View Photos Job #{len(SUBS)-idx}", key=f"v{idx}"):
-                    st.json(job)
+# DASHBOARD
+if is_admin() and st.session_state.show_dashboard:
+    st.markdown('<div class="hero"><h2 style="color:white;margin:0;">📊 Dashboard - Clients Conserved Forever</h2><p>All clients, purchases, addresses, files</p></div>', unsafe_allow_html=True)
+    if not SUBS and len([k for k in USERS if USERS[k].get("role")!="admin"])==0:
+        st.warning("No clients yet. But new code will now conserve them! Create test client again - this time it will stay after upgrades.")
+    import pandas as pd
+    if SUBS:
+        st.subheader("📋 Jobs (Where you receive client files)")
+        df=pd.DataFrame([{"Job#":len(SUBS)-i,"Date":j.get("date"),"Name":j.get("client_name"),"Email":j.get("client_email"),"Home Address":j.get("home_address"),"Service":j.get("service"),"Amount":j.get("amount"),"Status":"PAID" if j.get("paid") else "FREE","Photos":j.get("photo_count"),"Newsletter":j.get("newsletter")} for i,j in enumerate(reversed(SUBS))])
+        st.dataframe(df, use_container_width=True)
+    if USERS:
+        st.subheader("👤 Client Database - Conserved on Upgrades")
+        ud=[{"Name":v.get("name"),"Email":k,"Home Address":v.get("address","MISSING"),"Plan":v.get("plan"),"Newsletter":v.get("newsletter"),"Joined":v.get("joined")} for k,v in USERS.items() if v.get("role")!="admin"]
+        if ud: st.dataframe(pd.DataFrame(ud), use_container_width=True)
     st.stop()
 
-# NORMAL DESIGNER VIEW
-st.markdown(f'<div class="hero"><h2 style="color:white;margin:0;">Welcome back, {st.session_state.login.split("@")[0]}! 🌿</h2><p>Zip-native plants • Pro report • Client-ready</p></div>', unsafe_allow_html=True)
+# CLIENT VIEW
+user=USERS[st.session_state.login]
+st.markdown(f'<div class="hero"><h3 style="color:white;margin:0;">Welcome {user.get("name")}!</h3><p>Address + Email mandatory for paid precise report</p></div>', unsafe_allow_html=True)
 
-# CLIENT INFO FORM - THIS IS WHAT YOU RECEIVE
-st.markdown("### 👤 Client Info & Service Requested (This goes to your Inbox)")
-c1,c2,c3=st.columns(3)
-with c1: client_name=st.text_input("Client Full Name", placeholder="John Smith")
-with c2: client_email=st.text_input("Client Email (for delivery)", value=st.session_state.login)
-with c3: service=st.selectbox("Service Needed", ["Full Yard Design $49","Removal Plan Only $29","New Planting Only $29","AI Visual Only $19","On-site Consultation $149"])
+st.markdown("### 📝 Project Details")
+c1,c2=st.columns(2)
+with c1:
+    client_name=st.text_input("Full Name*", value=user.get("name",""))
+    client_email=st.text_input("Email* (for delivery)", value=st.session_state.login)
+    home_address=st.text_input("Home Address* (mandatory for PAID)", value=user.get("address",""), placeholder="123 Main St, Upper Darby, PA 19082")
+with c2:
+    zipc=st.text_input("Zip*", value="19082")
+    service=st.selectbox("Service & Price - Click to pay instantly*", ["Full Yard Design $49","Removal Plan Only $29","New Planting Only $29","AI Visual Only $19","On-site Consultation $149"])
+    newsletter=st.checkbox("Quarterly newsletter (tips + discounts)", value=user.get("newsletter",True))
 
-notes=st.text_area("What does client want? (e.g. low maintenance, pet friendly, privacy)", placeholder="I want low maintenance, colorful, privacy from neighbors...")
-st.divider()
+# INSTANT PAYMENT WHEN PRICE CLICKED - FIX!
+amount_map={"Full Yard Design $49":49,"Removal Plan Only $29":29,"New Planting Only $29":29,"AI Visual Only $19":19,"On-site Consultation $149":149}
+amt=amount_map.get(service,49)
+st.session_state.selected_amount=amt
 
-cL,cR=st.columns([3,1])
-with cL:
-    zipc=st.text_input("📍 Client Zip Code", "19426")
-    ups=st.file_uploader("📸 Upload 1-4 Yard Photos", accept_multiple_files=True, type=["jpg","jpeg","png"])
-with cR:
+paid=(user["plan"]=="paid") or st.session_state.unlocked
+
+# SHOW PRICE BOX IMMEDIATELY WHEN SERVICE CLICKED
+st.markdown(f'<div class="price-box"><h2 style="margin:0;color:#166534;">{service}</h2><p>You selected: ${amt} - Pay to unlock precise analysis for {home_address or "your address"}</p></div>', unsafe_allow_html=True)
+
+col_pay1,col_pay2=st.columns(2)
+with col_pay1:
     if not paid:
-        st.error("🔒 PAID LOCKED")
-        st.link_button("Unlock $49 →", STRIPE_LINK, use_container_width=True)
-        if st.button("I Paid - Unlock"): st.session_state.unlocked=True; st.rerun()
+        if not home_address or not client_email:
+            st.error("⚠️ Enter Home Address + Email to enable payment")
+        else:
+            st.link_button(f"💳 Pay ${amt} Now - Unlock Report", "https://buy.stripe.com/test_00g5kL2V0", use_container_width=True, type="primary")
+            if st.button(f"✅ I Paid ${amt} - Unlock", use_container_width=True):
+                USERS[st.session_state.login]["address"]=home_address
+                USERS[st.session_state.login]["name"]=client_name
+                USERS[st.session_state.login]["newsletter"]=newsletter
+                save_all()
+                st.session_state.unlocked=True; st.rerun()
     else:
-        st.success("✅ PAID - Full Unlocked")
+        st.success(f"✅ PAID ${amt} - Unlocked")
 
-if ups and st.button("✨ Generate & Send to Admin Inbox", type="primary", use_container_width=True):
-    # SAVE TO INBOX
-    job={"client_name":client_name or st.session_state.login.split("@")[0], "client_email":client_email, "zip":zipc, "service":service, "notes":notes, "date":str(datetime.datetime.now())[:19], "paid":paid, "photo_count":len(ups)}
-    SUBS.append(job); save_subs()
-    st.balloons(); st.success(f"✅ Submitted! Admin will see this in Inbox - Job #{len(SUBS)}")
+notes=st.text_area("What do you want?")
+ups=st.file_uploader("📸 Yard Photos", accept_multiple_files=True, type=["jpg","png","jpeg"])
 
-    st.header(f"Report - Zip {zipc} - {service}")
-    col1,col2=st.columns(2)
-    with col1:
-        st.subheader("1. Removal / Keep Plan")
-        if paid:
-            st.markdown('<div class="card"><span class="badge-red">REMOVE</span> <b>Juniper front window</b> - Blocks light</div>', unsafe_allow_html=True)
-            st.markdown('<div class="card"><span class="badge">KEEP</span> <b>Mature Maple</b> - Great shade</div>', unsafe_allow_html=True)
-        else: st.info("🔒 Paid: Full removal plan - 1 preview")
-    with col2:
-        st.image(ups[0], caption="Original - Client upload")
-        if paid: st.image(ups[0], caption="AI Proposed: lavender + boxwood")
-
-    st.subheader("2. New Plants (with YOUR affiliate links)")
-    plants=[{"name":"Lavender","why":"Purple, fragrant","price":"$14.99"},{"name":"Boxwood","why":"Evergreen","price":"$29.99"},{"name":"Black-Eyed Susan","why":"Native","price":"$11.99"},{"name":"Hydrangea","why":"Bloom","price":"$34.99"}]
-    cols=st.columns(2)
-    for i,pl in enumerate(plants):
-        with cols[i%2]:
-            st.markdown(f'<div class="card"><h4>{pl["name"]}</h4><p>{pl["why"]}</p><b>{pl["price"]}</b></div>', unsafe_allow_html=True)
-            if paid: st.link_button(f"Buy {pl['name']}", AFF.get(pl["name"],"#"), use_container_width=True)
+if ups and st.button("✨ Generate & Send to Dashboard", type="primary", use_container_width=True):
+    if not client_name or not client_email: st.error("Name + Email mandatory!"); st.stop()
+    if paid and not home_address: st.error("Address mandatory for paid!"); st.stop()
+    USERS[st.session_state.login]["address"]=home_address; USERS[st.session_state.login]["name"]=client_name; USERS[st.session_state.login]["newsletter"]=newsletter
+    job={"client_name":client_name,"client_email":client_email,"home_address":home_address,"zip":zipc,"service":service,"amount":amt if paid else 0,"notes":notes,"date":str(datetime.datetime.now())[:19],"paid":paid,"photo_count":len(ups),"newsletter":newsletter}
+    SUBS.append(job)
+    if paid: USERS[st.session_state.login]["purchases"].append(job)
+    save_all()
+    st.balloons(); st.success(f"Saved! Job #{len(SUBS)} - Will be conserved on next upgrades!")
+    st.image(ups[0])
