@@ -86,7 +86,7 @@ paid=plan=="paid" or st.session_state.unlocked
 
 st.markdown(f'<div class="hero"><h2 style="color:white; margin:0;">Welcome back, {st.session_state.login.split("@")[0]}! 🌿</h2><p>Zip-based native plants • Professional report • Client-ready</p></div>', unsafe_allow_html=True)
 
-c1,c2=st.columns([3][1])
+c1,c2=st.columns([3,1])
 with c1:
     zipc=st.text_input("📍 Client Zip Code", "19426")
     ups=st.file_uploader("📸 Upload 1-4 Yard Photos (Front yard = best for AI recreation)", accept_multiple_files=True, type=["jpg","jpeg","png"])
