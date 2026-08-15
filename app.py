@@ -135,49 +135,33 @@ if st.session_state.step=="agreement":
         if agree: st.session_state.step="approval"; st.rerun()
         else: st.error("Must agree")
     st.stop()
-if st.session_state.step=="approval":
-    st.title("Approval Code Sent")
-    st.info(f"Demo Code: {st.session_state.approval_code}")
-    code=st.text_input("Enter Code")
-    if st.button("Access Free Tier"):
-        if code==st.session_state.approval_code or code=="HARRYVIP": st.session_state.step="free_upload"; st.rerun()
-    st.stop()
+# ADD AT TOP
+ADMIN_EMAILS = ["harphen-prog@gmail.com", "harphen.admin@gmail.com"]
 
-if st.session_state.step=="free_upload":
-    st.title("Free Tier - Upload Yard")
-    st.write(f"Welcome {st.session_state.user['email']}")
-    pics=st.file_uploader("Take or Upload Yard Pictures (1-3)",type=["jpg","png","jpeg"],accept_multiple_files=True)
-    if pics:
-        for p in pics: st.image(p,width=300)
-    if st.button("✅ Execute / OK - Analyze My Yard",type="primary",use_container_width=True):
-        if not pics: st.error("Upload at least 1 picture")
-        else: st.session_state.pics=pics; st.session_state.page=1; st.session_state.step="free_result"; st.rerun()
-    st.stop()
+# AFTER Create Account button:
+if email.lower() in ADMIN_EMAILS:
+    st.session_state.user = {"email":email, "role":"admin", "address":home}
+    st.session_state.step = "admin_dashboard" # NOT free tier
+else:
+    st.session_state.user = {"email":email, "role":"user", "address":home}
+    st.session_state.step = "agreement"
 
-if st.session_state.step=="free_result":
-    if st.session_state.page==1:
-        st.title("Page 1/4 - Welcome")
-        st.success(f"Hello {st.session_state.user['email']} 👋")
-        if st.session_state.pics: st.image(st.session_state.pics[0],caption="Your Picture - Before",use_container_width=True)
-        st.info("We will walk you through page by page")
-        if st.button("Next → Plant Identification"): st.session_state.page=2; st.rerun()
-    elif st.session_state.page==2:
-        st.title("Page 2/4 - Plant Identification")
-        if st.session_state.pics: st.image(st.session_state.pics[0],width=350)
-        st.markdown("- Boxwood overcrowded, Weeds, Compacted soil, Hosta spots\n- Sun: Full Sun South")
-        if st.button("Next → Suggestions"): st.session_state.page=3; st.rerun()
-    elif st.session_state.page==3:
-        st.title("Page 3/4 - Suggestions & Advice")
-        st.write("Thin boxwood 30%, add compost, 3in mulch. Replace 2 with Allium Millenium. Add Zinnia, Hydrangea")
-        if st.button("Next → Before / After"): st.session_state.page=4; st.rerun()
-    elif st.session_state.page==4:
-        st.title("Page 4/4 - Your New Look")
-        c1,c2=st.columns(2)
-        with c1:
-            st.subheader("Before")
-            if st.session_state.pics: st.image(st.session_state.pics[0],use_container_width=True)
-        with c2:
-            st.subheader("After - Suggested")
-            st.image("https://images.unsplash.com/photo-1558618666-fcd25c85cd64",caption="With Allium + Zinnia beds",use_container_width=True)
-        if st.button("Start Over"): st.session_state.step="free_upload"; st.rerun()
-    st.stop()
+# FIX UPLOAD - add key and persistence
+pics = st.file_uploader("Take or Upload Yard Pictures (1-3)",
+                         type=["jpg","png","jpeg"],
+                         accept_multiple_files=True,
+                         key="yard_uploader") # key keeps it
+
+if st.session_state.get("yard_uploader"):
+    st.success(f"{len(st.session_state.yard_uploader)} picture(s) selected")
+    for p in st.session_state.yard_uploader:
+        st.image(p, width=300)
+
+# ADMIN DASHBOARD
+if st.session_state.step == "admin_dashboard":
+    st.title("👑 Admin Dashboard")
+    st.success(f"Welcome Admin {st.session_state.user['email']}")
+    st.write(f"Total users in memory: {len(st.session_state.users_db)}")
+    st.write("All uploads, paid users, analytics here")
+    if st.button("Go to Free Tier as test user"):
+        st.session_state.step="free_upload"; st.rerun()
